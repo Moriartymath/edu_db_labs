@@ -251,5 +251,345 @@ INSERT INTO `project_db`.`tasks` (`Name`, `Developer`, `Status`, `Deadline`, `Pr
 
 ```
 
-- RESTfull сервіс для управління даними
+
+## RESTfull сервіс для управління даними
+
+### Головний файл
+
+```python
+from flask import Flask
+
+app = Flask(__name__);
+    
+from projects_controller import *
+from users_controller import *
+```
+
+### Projects Controller 
+
+```python
+from app import app
+from projects_model import Projects
+from flask import request
+
+projects = Projects();
+
+@app.route("/projects")
+def get_all_projects():
+    return projects.get_all_projects();
+
+@app.route("/project/<id>")
+def get_project_by_id(id):
+    return projects.get_project_by_id(id);
+
+@app.route("/project/add", methods=["POST"])
+def add_project():
+    return projects.add_project(request.form);
+
+@app.route("/project/update", methods=["PUT"])
+def update_project():
+    return projects.update_project(request.form);
+
+@app.route("/project/delete/<id>", methods=["DELETE"])
+def delete_project(id):
+    return projects.delete_project(id);
+```
+
+### Projects Model
+
+```py
+import json
+from flask import make_response
+import mysql.connector
+
+class Projects:
+    def __init__(self):
+        try:
+            self.con = mysql.connector.connect(host="localhost",user="root",password="db12345!",database='project_db');
+            self.cur = self.con.cursor(dictionary=True);
+            self.con.autocommit = True;
+            print("succesful connection");
+        except:
+            print("failed");
+    
+
+    def get_all_projects(self):
+        self.cur.execute("SELECT * FROM projects")
+
+        result = self.cur.fetchall()
+
+        if (self.cur.rowcount == 0):
+            result = {"message":"There is no projects", "error": "Not Found", "status code": 404};
+
+        return result;
+
+
+    def get_project_by_id(self,id):
+        if (not str(id).isdigit()):
+            return {"message":"Invalid project id", "error": "Bad Request", "status code": 400};
+        self.cur.execute(f"SELECT * FROM projects where id={id}");
+
+        result = self.cur.fetchall()
+
+        if (self.cur.rowcount == 0):
+            result = {"message":"There is no project with such id", "error": "Not Found", "status code": 404};
+
+        return result;
+
+    def add_project(self,data):
+        data = dict(data);
+
+        return_value = ""
+
+        if (len(data) == 3):
+            self.cur.execute(f"INSERT INTO projects (Name, Description, Status) VALUES ('{data["Name"]}', '{data["Description"]}', '{data["Status"]}')")
+
+            print(self.cur.rowcount);
+            if (self.cur.rowcount != 0):
+                return_value = {"message":"Successfully added to database", "status code": 200};
+            else:
+                return_value = {"message":"Project was not added to database", "error": "Not Acceptable", "status code": 406};
+        else:
+            return_value = {"message":"Invalid amount of keys", "error": "Bad Request", "status code": 400};
+
+
+    
+        return return_value;
+
+    def delete_project(self,id):
+        if(not str(id).isdigit()):
+            return {"message":"Invalid project id", "error": "Bad Request", "status code": 400}
+        
+        self.cur.execute(f"DELETE FROM projects_members WHERE ProjectId={id}");
+        self.cur.execute(f"DELETE FROM tasks WHERE ProjectId={id}");
+        self.cur.execute(f"DELETE FROM reviews WHERE ProjectId={id}");
+        self.cur.execute(f"DELETE FROM payments WHERE ProjectId={id}");
+        self.cur.execute(f"DELETE FROM projects WHERE Id={id}");
+        
+        print(self.cur.rowcount);
+        if(self.cur.rowcount > 0):
+            return_value = {"message":"Project was successfully deleted", "status code": 204};
+        else:
+            return_value = {"message":"Nothing to delete", "error": "Not Found", "status code": 404};
+        
+    
+        return return_value;
+
+    def update_project(self,data):
+       
+        data = dict(data);
+        return_value = "";
+
+        if(len(data) == 4):
+            if(not str(data["Id"]).isdigit()):
+                return {"message":"Invalid project id", "error": "Bad Request", "status code": 400};
+        
+            self.cur.execute(f"UPDATE projects SET Name='{data["Name"]}', Description='{data["Description"]}', Status='{data["Status"]}' WHERE Id={data["Id"]}");
+
+            print(self.cur.rowcount);
+
+            if(self.cur.rowcount  > 0):
+                return_value = {"message":"Updated successfully", "status code": 200};
+            else:
+                return_value = {"message":"Nothing to update", "error": "Not Found", "status code": 404};
+        else:
+            return_value =  {"message":"Invalid amount of keys", "error": "Bad Request", "status code": 400};
+    
+        return return_value;
+```
+
+### Users Controller
+
+```py
+from app import app
+from users_model import Users
+from flask import request
+
+users = Users();
+
+@app.route("/users")
+def get_all_users():
+    return users.get_all_users();
+
+@app.route("/user/<id>")
+def get_user_by_id(id):
+    return users.get_user_by_id(id);
+
+@app.route("/user/login/<Login>")
+def get_user_by_Login(Login):
+    return users.get_user_by_Login(Login);
+
+@app.route("/user/add", methods=["POST"])
+def add_user():
+    return users.add_user(request.form);
+
+@app.route("/user/update", methods=["PUT"])
+def update_user():
+    return users.update_user(request.form);
+
+@app.route("/user/delete/<id>", methods=["DELETE"])
+def delete_user(id):
+    return users.delete_user(id);
+
+```
+
+### Users Model
+
+```py
+import json
+import mysql.connector
+import base64
+
+class Users:
+    def __init__(self):
+        try:
+            self.con = mysql.connector.connect(host="localhost",user="root",password="db12345!",database='project_db');
+            self.cur = self.con.cursor(dictionary=True);
+            self.con.autocommit = True;
+            print("succesful connection");
+        except:
+            print("failed");
+    
+
+    def get_all_users(self):
+        self.cur.execute("SELECT * FROM users")
+        result = self.cur.fetchall();
+
+        if(self.cur.rowcount > 0):
+            for i in range(len(result)):
+                result[i]["Picture"] = str(base64.b64encode(result[i]["Picture"]));
+                result[i]["Password"] = str(base64.b64encode(result[i]["Password"]));
+        else:
+            result = {"message":"There is no users", "error": "Not Found", "status code": 404}
+        
+        return result;
+
+
+    def get_user_by_id(self,id):
+        if (not str(id).isdigit()):
+            return {"message":"Invalid user id", "error": "Bad Request", "status code": 400};
+        self.cur.execute(f"SELECT * FROM users where id={id}");
+        result = self.cur.fetchall();
+
+        if(self.cur.rowcount > 0):
+            for i in range(len(result)):
+                result[i]["Picture"] = str(base64.b64encode(result[i]["Picture"]));
+                result[i]["Password"] = str(base64.b64encode(result[i]["Password"]));
+        else:
+            result = {"message":"There is no user with such id", "error": "Not Found", "status code": 404}
+    
+        return result;
+
+    def get_user_by_Login(self,Login):
+        self.cur.execute(f"SELECT * FROM users WHERE Login='{Login}'")
+        result = self.cur.fetchall();
+
+        if(self.cur.rowcount > 0):
+            for i in range(len(result)):
+                result[i]["Picture"] = str(base64.b64encode(result[i]["Picture"]));
+                result[i]["Password"] = str(base64.b64encode(result[i]["Password"]));
+        else:
+            result = {"message":"There is no user with such Login", "error": "Not Found", "status code": 404}
+        
+        return result;
+
+
+    def add_user(self,data):
+        data = dict(data);
+        return_value = "";
+        if (len(data) == 5):
+            self.cur.execute("SELECT Name FROM roles");
+            result = self.cur.fetchall();
+            IsRoleValid = False;
+
+            for i in range(len(result)):
+                if(result[i]["Name"] == data["Role"]):
+                    IsRoleValid = True;
+                    break;
+
+            if (not IsRoleValid):
+                return_value = {"message":"Invalid Role", "error": "Not Found", "status code": 404};
+            else:
+                self.cur.execute(f"SELECT Id FROM roles WHERE Name='{data["Role"]}'");
+                RoleId = self.cur.fetchall();
+                RoleId = int(RoleId[0]["Id"]);
+
+                try:
+                    self.cur.execute(f"INSERT INTO users (Login, Picture, Password, Email, Role) values('{data["Login"]}', '{data["Picture"]}', '{data["Password"]}', '{data["Email"]}', '{data["Role"]}')");
+
+                    self.cur.execute(f"SELECT Id FROM users WHERE Email='{data["Email"]}'");
+                    user_id = self.cur.fetchall();
+                    user_id = int(user_id[0]["Id"]);
+
+                    self.cur.execute(f"INSERT INTO members (RoleId, UserId) values ({RoleId},{user_id})");
+                    return_value = {"message":"Successfully added to database", "status code": 200};
+                except:
+                    return_value = {"message":"There is already user with such email or login", "error": "Conflict", "status code": 409};
+        else:
+            return_value = {"message":"Invalid amount of keys", "error": "Bad Request", "status code": 400};
+            
+        return return_value;
+
+    def update_user(self,data):
+        if(len(dict(data)) != 6):
+            return {"message":"Invalid amount of keys", "error": "Bad Request", "status code": 400};
+
+        if(not str(dict(data)["Id"]).isdigit()):
+            return {"message":"Invalid user id", "error": "Bad Request", "status code": 400};
+        self.cur.execute(f"SELECT Name FROM roles");
+        all_roles = self.cur.fetchall();
+        result = "Invalid data";
+        data = dict(data);
+
+        IsValidRole = False;
+
+        for i in range(len(all_roles)):
+            if(all_roles[i]["Name"] == data["Role"]):
+                IsValidRole = True;
+                break;
+        
+        if (IsValidRole):
+            self.cur.execute(f"SELECT Id FROM roles WHERE Name='{data["Role"]}'");
+            id_of_Role = self.cur.fetchall();
+            id_of_Role = int(id_of_Role[0]["Id"]);
+            try:
+                self.cur.execute(f"UPDATE members SET RoleId={id_of_Role}");
+                self.cur.execute(f"UPDATE users SET Login='{data["Login"]}', Picture='{data["Picture"]}', Password='{data["Password"]}', Email='{data["Email"]}', Role='{data["Role"]}' WHERE Id={data["Id"]}");
+                
+                if (self.cur.rowcount == 0):
+                    result = {"message":"Nothing to update", "error": "Not Found", "status code": 404};
+                else:
+                    result = {"message":"Updated successfully", "status code": 200};
+            except:
+                result = {"message":"There is already user with such email or login", "error": "Conflict", "status code": 409};
+        else:
+            result = {"message":"Invalid Role", "error": "Not Found", "status code": 404}
+
+        return result;
+
+
+    def delete_user(self,id):
+
+        if(not str(id).isdigit()):
+            return {"message":"Invalid user id", "error": "Bad Request", "status code": 400};
+    
+        self.cur.execute(f"SELECT Id FROM members WHERE UserId={id}");
+
+        result = self.cur.fetchall();
+
+        if(len(result) != 0):
+            member_id = int(result[0]["Id"]);
+            self.cur.execute(f"DELETE FROM projects_members WHERE MemberId={member_id}");
+
+        self.cur.execute(f"DELETE FROM members WHERE UserId={id}");
+        self.cur.execute(f"DELETE FROM users WHERE Id={id}");
+        
+        if(self.cur.rowcount == 0 ):
+            result = {"message":"Nothing to delete", "error": "Not Found", "status code": 404};
+        else:
+            result = {"message":"User was successfully deleted", "status code": 204};
+
+        return result;
+```
+
 
